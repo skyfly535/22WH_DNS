@@ -1,0 +1,155 @@
+---
+- hosts: all
+  become: yes
+  tasks:
+  #Установка пакетов bind, bind-utils, ntp и nano
+  - name: install packages
+    yum: 
+      name:
+        - bind
+        - bind-utils
+        - ntp
+        - nano
+      state: latest
+      update_cache: true
+
+  # останавливаем и убираем из автозарузки NTP-клиент Chrony
+  - name: stop and disable chronyd
+    service: 
+      name: chronyd
+      state: stopped
+      enabled: false
+
+  # запускаем и ставим в автозарузку утилититу ntp
+  - name: start and enable ntpd 
+    service: 
+      name: ntpd
+      state: started
+      enabled: true
+      
+  #Копирование файла named.zonetransfer.key на хосты с правами 0644
+  #Владелец файла — root, група файла — named
+  - name: copy transferkey to all servers and the client
+    copy: src=named.zonetransfer.key dest=/etc/named.zonetransfer.key owner=root group=named mode=0644
+
+#Настройка хоста ns01
+- hosts: ns01
+  become: yes
+  tasks:
+  #Копирование конфигурации DNS-сервера
+  - name: copy named.conf SRV
+    template: 
+      src: master-named.conf 
+      dest: /etc/named.conf 
+      owner: root 
+      group: named
+      mode: 0640
+   
+  #Копирование файлов с настроками зоны. 
+  #Будут скопированы все файлы из дирректории /home/roman/DNS/provisioning/templates
+  - name: copy zones SRV
+    copy: 
+      src:  "{{ item }}" 
+      dest: /etc/named/ 
+      owner: root 
+      group: named
+      mode: 0660
+    with_fileglob:
+      - "/home/roman/DNS/provisioning/templates/*"
+
+
+  #Копирование файла resolv.conf (шаблон с Jinja) 
+  - name: copy resolv.conf to the servers SRV
+    template: 
+      src: servers-resolv.conf.j2
+      dest: /etc/resolv.conf 
+      owner: root 
+      group: root
+      mode: 0644
+
+
+  #Изменение прав каталога /etc/named
+  #Права 670, владелец — root, группа — named  
+  - name: set /etc/named permissions SRV
+    file: 
+      path: /etc/named
+      owner: root
+      group: named 
+      mode: 0670  
+
+  #Перезапуск службы Named и добавление её в автозагрузку
+  - name: start and enable named SRV
+    service: 
+      name: named
+      state: restarted
+      enabled: true
+
+#Настройка хоста ns02
+- hosts: ns02
+  become: yes
+  tasks:
+  #Копирование конфигурации DNS-сервера
+  - name: copy named.conf SLAVE
+    template: 
+      src: slave-named.conf 
+      dest: /etc/named.conf 
+      owner: root 
+      group: named
+      mode: 0640
+
+  #Копирование файла resolv.conf
+  - name: copy resolv.conf to the servers SLAVE
+    template: 
+      src: servers-resolv.conf.j2
+      dest: /etc/resolv.conf 
+      owner: root 
+      group: root
+      mode: 0644
+
+  #Изменение прав каталога /etc/named
+  #Права 670, владелец — root, группа — name
+  - name: set /etc/named permissions SLAVE
+    file: 
+      path: /etc/named 
+      owner: root 
+      group: named 
+      mode: 0670
+
+  #Перезапуск службы Named и добавление её в автозагрузку
+  - name: start and enable named SLAVE
+    service: 
+      name: named
+      state: restarted
+      enabled: true
+
+#Настройка хостов client,client2    
+- hosts: client,client2
+  become: yes
+  tasks:
+  #Копирование файла resolv.conf
+  - name: copy resolv.conf to the client
+    template: 
+      src: client-resolv.conf
+      dest: /etc/resolv.conf 
+      owner: root 
+      group: root
+      mode: 0644
+
+  #Копирование конфигруационного файла rndc
+  - name: copy rndc conf file
+    template: 
+      src: rndc.conf
+      dest: /home/vagrant/rndc.conf 
+      owner: vagrant 
+      group: vagrant
+      mode: 0644
+
+  #Настройка сообщения при входе на сервер
+  - name: copy motd to the client
+    template: 
+      src: client-motd
+      dest: /etc/motd 
+      owner: root 
+      group: root
+      mode: 0644
+
